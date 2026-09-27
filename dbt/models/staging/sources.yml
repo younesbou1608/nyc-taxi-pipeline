@@ -1,0 +1,14 @@
+version: 2
+
+sources:
+  - name: raw
+    database: "{{ env_var('GCP_PROJECT_ID') }}"
+    schema: "{{ env_var('BQ_RAW_DATASET', 'nyc_taxi_raw') }}"
+    tables:
+      - name: trips_clean
+        description: Trajets nettoyes et enrichis par le job Spark.
+        loaded_at_field: pickup_at
+        freshness:
+          warn_after: {count: 45, period: day}
+      - name: taxi_zones
+        description: Referentiel des 265 zones TLC.

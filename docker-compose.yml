@@ -1,0 +1,45 @@
+# Airflow 2.9 standalone + projet monte en volume.
+# Usage : docker compose up -d  puis http://localhost:8080 (admin/admin)
+services:
+  airflow:
+    image: apache/airflow:2.9.3-python3.11
+    container_name: nyc-airflow
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+      NYC_PROJECT_DIR: /opt/airflow/project
+      PYTHONPATH: /opt/airflow/project
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID}
+      BQ_RAW_DATASET: ${BQ_RAW_DATASET:-nyc_taxi_raw}
+      BQ_ANALYTICS_DATASET: ${BQ_ANALYTICS_DATASET:-nyc_taxi_analytics}
+      _PIP_ADDITIONAL_REQUIREMENTS: "pyspark==3.5.1 google-cloud-bigquery==3.25.0 dbt-core==1.8.6 dbt-bigquery==1.8.2"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./src:/opt/airflow/project/src
+      - ./dbt:/opt/airflow/project/dbt
+      - ./data:/opt/airflow/project/data
+      - ~/.config/gcloud:/home/airflow/.config/gcloud:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: standalone
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 10
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

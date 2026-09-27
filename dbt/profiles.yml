@@ -1,0 +1,13 @@
+# Copier dans ~/.dbt/profiles.yml ou lancer dbt avec --profiles-dir dbt/
+nyc_taxi:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth                       # gcloud auth application-default login
+      project: "{{ env_var('GCP_PROJECT_ID') }}"
+      dataset: "{{ env_var('BQ_ANALYTICS_DATASET', 'nyc_taxi_analytics') }}"
+      location: "{{ env_var('BQ_LOCATION', 'US') }}"
+      threads: 4
+      priority: interactive
+      job_retries: 1

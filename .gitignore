@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+data/raw/*
+data/clean/*
+!data/raw/.gitkeep
+!data/clean/.gitkeep
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+logs/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
