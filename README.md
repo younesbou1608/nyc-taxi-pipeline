@@ -1,4 +1,5 @@
 # NYC Taxi Analytics — Pipeline Big Data vers BigQuery
+[![CI](https://github.com/younesbou1608/nyc-taxi-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/younesbou1608/nyc-taxi-pipeline/actions/workflows/ci.yml)
 
 Pipeline de données de bout en bout sur les trajets de taxis jaunes de New York
 (NYC TLC, ~3 M de lignes par mois) : ingestion, nettoyage distribué avec **PySpark**,
@@ -166,9 +167,9 @@ Règles : durée entre 1 et 360 minutes, distance entre 0,1 et 200 miles, montan
 
 **3. En aval, dans dbt** : tests `not_null`, `unique`, `relationships`, `accepted_values`,
 `accepted_range`, unicité de combinaisons, plus deux tests métier (pas de revenu négatif,
-pourboire inférieur au total). L'unicité de `trip_key` est en *warning* : la source TLC
-contient des doublons exacts, qu'on signale sans bloquer le pipeline.
-
+pourboire inférieur au total). L'unicité de `trip_key` est en *warning* et non en erreur : la source TLC n'a pas de
+clé naturelle et peut contenir des doublons. Mesuré sur janvier à mars 2024 :
+**1 clé en double sur 9 070 727 trajets**, signalée sans bloquer le pipeline.
 ---
 
 ## Tests
