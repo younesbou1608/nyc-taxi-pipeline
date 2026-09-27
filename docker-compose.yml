@@ -1,28 +1,34 @@
-# Airflow 2.9 standalone + projet monte en volume.
-# Usage : docker compose up -d  puis http://localhost:8080 (admin/admin)
+# Airflow 2.9 (standalone : scheduler + webserver) + Postgres.
+# Prerequis dans .env : GCP_PROJECT_ID et AIRFLOW_UID (= `id -u`).
 services:
   airflow:
-    image: apache/airflow:2.9.3-python3.11
+    build: ./docker/airflow
+    image: nyc-taxi-airflow:2.9.3
     container_name: nyc-airflow
+    user: "${AIRFLOW_UID:-50000}:0"
     environment:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
       NYC_PROJECT_DIR: /opt/airflow/project
       PYTHONPATH: /opt/airflow/project
-      GCP_PROJECT_ID: ${GCP_PROJECT_ID}
+      DBT_BIN: /opt/airflow/dbt-venv/bin/dbt
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID:?GCP_PROJECT_ID manquant dans .env}
+      GOOGLE_CLOUD_PROJECT: ${GCP_PROJECT_ID}
       BQ_RAW_DATASET: ${BQ_RAW_DATASET:-nyc_taxi_raw}
       BQ_ANALYTICS_DATASET: ${BQ_ANALYTICS_DATASET:-nyc_taxi_analytics}
-      _PIP_ADDITIONAL_REQUIREMENTS: "pyspark==3.5.1 google-cloud-bigquery==3.25.0 dbt-core==1.8.6 dbt-bigquery==1.8.2"
+      BQ_LOCATION: ${BQ_LOCATION:-US}
+      GOOGLE_APPLICATION_CREDENTIALS: /opt/gcloud/adc.json
+      SPARK_DRIVER_MEMORY: ${AIRFLOW_SPARK_DRIVER_MEMORY:-2g}
     volumes:
       - ./dags:/opt/airflow/dags
       - ./src:/opt/airflow/project/src
       - ./dbt:/opt/airflow/project/dbt
       - ./data:/opt/airflow/project/data
-      - ~/.config/gcloud:/home/airflow/.config/gcloud:ro
+      - ${HOME}/.config/gcloud/application_default_credentials.json:/opt/gcloud/adc.json:ro
     ports:
-      - "8080:8080"
+      - "${AIRFLOW_PORT:-8081}:8080"
     depends_on:
       postgres:
         condition: service_healthy

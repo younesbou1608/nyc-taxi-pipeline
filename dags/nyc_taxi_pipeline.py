@@ -9,10 +9,12 @@ import os
 
 import pendulum
 from airflow.decorators import dag, task
+from airflow.models.param import Param
 from airflow.operators.bash import BashOperator
 
 PROJECT_DIR = os.getenv("NYC_PROJECT_DIR", "/opt/airflow/project")
 DBT_DIR = f"{PROJECT_DIR}/dbt"
+DBT_BIN = os.getenv("DBT_BIN", "dbt")
 
 DEFAULT_ARGS = {
     "owner": "data-engineering",
@@ -29,18 +31,26 @@ DEFAULT_ARGS = {
     start_date=pendulum.datetime(2024, 1, 1, tz="UTC"),
     catchup=False,
     max_active_runs=1,
+    is_paused_upon_creation=True,
     default_args=DEFAULT_ARGS,
+    params={
+        "year": Param(None, type=["null", "integer"], description="Annee (run manuel)"),
+        "month": Param(None, type=["null", "integer"], minimum=1, maximum=12),
+    },
     tags=["nyc-taxi", "spark", "bigquery", "dbt"],
 )
 def nyc_taxi_pipeline():
     @task
-    def resolve_period(data_interval_end=None) -> dict[str, int]:
+    def resolve_period(params=None, data_interval_end=None) -> dict[str, int]:
         """Le run du mois M traite les donnees du mois M-2 (delai de publication TLC).
 
         Pour un planning cron, le run declenche le 5 du mois M a
         data_interval_start = 5 du mois M-1 et data_interval_end = 5 du mois M.
         On part donc de data_interval_end (partir de start donnerait M-3).
         """
+        params = params or {}
+        if params.get("year") and params.get("month"):
+            return {"year": int(params["year"]), "month": int(params["month"])}
         target = data_interval_end.subtract(months=2)
         return {"year": target.year, "month": target.month}
 
@@ -80,8 +90,8 @@ def nyc_taxi_pipeline():
         task_id="dbt_build",
         bash_command=(
             f"cd {DBT_DIR} && "
-            "dbt deps --quiet && "
-            f"dbt build --profiles-dir {DBT_DIR}"
+            f"{DBT_BIN} deps --quiet && "
+            f"{DBT_BIN} build --profiles-dir {DBT_DIR}"
         ),
     )
 

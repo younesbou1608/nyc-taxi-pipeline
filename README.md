@@ -151,16 +151,28 @@ python -m src.transform --year 2024 --month 1 --sample 100000
 
 ## Orchestration Airflow
 
+Airflow tourne dans Docker avec une image dédiée (`docker/airflow/Dockerfile`) :
+Java 17 pour PySpark, et dbt isolé dans son propre environnement Python pour éviter
+les conflits de dépendances avec Airflow.
+
 ```bash
-docker compose up -d      # http://localhost:8080
+echo "AIRFLOW_UID=$(id -u)" >> .env   # une seule fois
+make airflow-up                       # http://localhost:18080 (port réglable : AIRFLOW_PORT)
+make airflow-password                 # mot de passe de l'utilisateur admin
+make airflow-test YEAR=2024 MONTH=1   # exécute le DAG complet pour un mois
 ```
 
 Le DAG `nyc_taxi_pipeline` s'exécute le 5 de chaque mois et traite le mois M-2
-(délai de publication de la TLC) :
+(délai de publication de la TLC). Un run manuel accepte les paramètres `year` et `month`.
+Le DAG est créé **en pause** : aucun run ne part tout seul au premier démarrage.
 
 ```
 resolve_period → download → spark_transform → load_bigquery → dbt_build
 ```
+
+Run complet de janvier 2024 dans Airflow : **2 min 17 s**, avec Spark limité à 1 Go de RAM.
+Relancé sur un mois déjà chargé, il produit exactement le même résultat (2 827 059 lignes) :
+le chargement est idempotent.
 
 ---
 

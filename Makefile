@@ -1,4 +1,5 @@
-.PHONY: setup lint test poc download transform load dbt-build pipeline rebuild clean
+.PHONY: setup lint test poc download transform load dbt-build pipeline rebuild clean \
+	airflow-up airflow-down airflow-logs airflow-password airflow-test
 
 YEAR ?= 2024
 MONTH ?= 1
@@ -42,6 +43,24 @@ rebuild:
 		python -m src.load_bq --year $(YEAR) --month $$m; \
 	done
 	$(MAKE) dbt-build
+
+# --- Airflow (Docker) ---
+airflow-up:
+	docker compose up -d --build
+
+airflow-down:
+	docker compose down
+
+airflow-logs:
+	docker compose logs -f airflow
+
+airflow-password:
+	docker compose exec airflow cat /opt/airflow/standalone_admin_password.txt; echo
+
+# Execute le DAG complet pour un mois, sans passer par le scheduler
+airflow-test:
+	docker compose exec airflow airflow dags test nyc_taxi_pipeline \
+		--conf '{"year": $(YEAR), "month": $(MONTH)}'
 
 clean:
 	rm -rf data/raw/*.parquet data/raw/*.csv data/clean/* dbt/target dbt/logs
