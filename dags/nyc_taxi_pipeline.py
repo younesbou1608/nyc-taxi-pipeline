@@ -6,6 +6,7 @@ et le projet dbt. Backfill possible via `airflow dags backfill`.
 from __future__ import annotations
 
 import os
+
 import pendulum
 from airflow.decorators import dag, task
 from airflow.operators.bash import BashOperator
