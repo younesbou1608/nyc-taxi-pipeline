@@ -6,33 +6,33 @@ models:
     columns:
       - name: trip_key
         description: Cle de substitution du trajet (hash).
-        tests:
+        data_tests:
           - not_null
           - unique:
               config:
                 severity: warn   # doublons exacts presents dans la source TLC
       - name: year_month
-        tests: [not_null]
+        data_tests: [not_null]
       - name: pickup_at
-        tests: [not_null]
+        data_tests: [not_null]
       - name: pickup_zone_id
-        tests:
+        data_tests:
           - not_null
           - relationships:
               to: ref('stg_zones')
               field: zone_id
       - name: total_amount
-        tests:
+        data_tests:
           - not_null
           - dbt_utils.accepted_range:
               min_value: 0
               max_value: 5000
       - name: payment_type
-        tests:
+        data_tests:
           - accepted_values:
               values: ['Credit card', 'Cash', 'No charge', 'Dispute', 'Unknown', 'Voided trip']
 
   - name: stg_zones
     columns:
       - name: zone_id
-        tests: [not_null, unique]
+        data_tests: [not_null, unique]

@@ -5,37 +5,37 @@ models:
     description: Table de faits des trajets (grain = un trajet), partitionnee par year_month.
     columns:
       - name: trip_key
-        tests:
+        data_tests:
           - not_null
           - unique:
               config:
                 severity: warn   # doublons exacts presents dans la source TLC
       - name: year_month
-        tests: [not_null]
+        data_tests: [not_null]
       - name: pickup_date
-        tests: [not_null]
+        data_tests: [not_null]
       - name: pickup_zone_id
-        tests:
+        data_tests:
           - not_null
           - relationships:
               to: ref('dim_zone')
               field: zone_id
       - name: dropoff_zone_id
-        tests:
+        data_tests:
           - relationships:
               to: ref('dim_zone')
               field: zone_id
       - name: trip_length_bucket
-        tests:
+        data_tests:
           - accepted_values:
               values: ['short', 'medium', 'long']
       - name: trip_duration_min
-        tests:
+        data_tests:
           - dbt_utils.accepted_range:
               min_value: 1
               max_value: 360
       - name: total_amount
-        tests:
+        data_tests:
           - dbt_utils.accepted_range:
               min_value: 0
               max_value: 5000
@@ -43,24 +43,24 @@ models:
   - name: dim_zone
     columns:
       - name: zone_id
-        tests: [not_null, unique]
+        data_tests: [not_null, unique]
 
   - name: dim_date
     columns:
       - name: date_day
-        tests: [not_null, unique]
+        data_tests: [not_null, unique]
 
   - name: agg_daily_zone
-    tests:
+    data_tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns: [pickup_date, pickup_zone_id]
     columns:
       - name: trips
-        tests:
+        data_tests:
           - dbt_utils.accepted_range:
               min_value: 1
 
   - name: agg_hourly_demand
-    tests:
+    data_tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns: [pickup_hour, is_weekend]
