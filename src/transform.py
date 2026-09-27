@@ -141,6 +141,7 @@ def add_derived_columns(df: DataFrame) -> DataFrame:
         .withColumn("is_weekend", F.col("pickup_dow").isin(1, 7))
         .withColumn("year", F.year("pickup_at"))
         .withColumn("month", F.month("pickup_at"))
+        .withColumn("year_month", F.col("year") * 100 + F.col("month"))
     )
 
 
@@ -229,6 +230,7 @@ def transform(spark: SparkSession, year: int, month: int, sample: int | None = N
         "tip_rate",
         "tolls_amount",
         "total_amount",
+        "year_month",
         "year",
         "month",
     )
@@ -261,7 +263,9 @@ def transform(spark: SparkSession, year: int, month: int, sample: int | None = N
     log.info("qualite: %s", report)
 
     if total and report["reject_rate"] > 0.25:
-        log.warning("taux de rejet eleve (%.1f%%) - verifier les regles", report["reject_rate"] * 100)
+        log.warning(
+            "taux de rejet eleve (%.1f%%) - verifier les regles", report["reject_rate"] * 100
+        )
     return report
 
 

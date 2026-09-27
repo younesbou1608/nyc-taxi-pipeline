@@ -1,9 +1,13 @@
-# NYC Taxi Analytics — Pipeline Big Data & Data Warehouse
+# NYC Taxi Analytics — Pipeline Big Data vers BigQuery
 
 Pipeline de données de bout en bout sur les trajets de taxis jaunes de New York
 (NYC TLC, ~3 M de lignes par mois) : ingestion, nettoyage distribué avec **PySpark**,
 chargement dans **BigQuery**, modélisation dimensionnelle et tests de qualité avec **dbt**,
-le tout orchestré par **Airflow** et validé en CI par **GitHub Actions**.
+orchestration **Airflow** et CI **GitHub Actions**.
+
+**100 % gratuit** : tourne sur le [sandbox BigQuery](https://cloud.google.com/bigquery/docs/sandbox),
+sans carte bancaire. Ce choix impose des contraintes fortes, qui ont façonné l'architecture
+(voir [Contraintes du sandbox et choix de design](#contraintes-du-sandbox-et-choix-de-design)).
 
 ---
 
@@ -13,41 +17,40 @@ le tout orchestré par **Airflow** et validé en CI par **GitHub Actions**.
                  ┌──────────────────────────┐
                  │  NYC TLC (Parquet CDN)   │
                  └────────────┬─────────────┘
-                              │  src/download.py
+                              │  src/download.py   (téléchargement atomique)
                               ▼
                  ┌──────────────────────────┐
-                 │  data/raw/*.parquet      │   zone lookup CSV (265 zones)
+                 │  data/raw/*.parquet      │   + référentiel des 265 zones
                  └────────────┬─────────────┘
-                              │  src/transform.py   (PySpark)
-                              │  · typage & renommage
-                              │  · règles qualité (durée, distance, montant…)
-                              │  · colonnes dérivées (durée, vitesse, tip_rate)
+                              │  src/transform.py  (PySpark)
+                              │  · typage, règles qualité, colonnes dérivées
                               │  · broadcast join sur les zones
                               ▼
                  ┌──────────────────────────┐
-                 │  data/clean/trips/       │  partitionné year=/month=
-                 │  data/clean/_quality/    │  métriques de rejet (JSON)
+                 │  data/clean/trips/       │   partitionné year=/month=
+                 │  data/clean/_quality/    │   rapport de rejet (JSON)
                  └────────────┬─────────────┘
-                              │  src/load_bq.py  (idempotent : DELETE mois + APPEND)
+                              │  src/load_bq.py
+                              │  WRITE_TRUNCATE sur trips_clean$YYYYMM
+                              │  + vérification du nombre de lignes
                               ▼
         ┌────────────────────────────────────────────┐
-        │  BigQuery  ·  dataset raw                  │
-        │  trips_clean (partition pickup_date,       │
-        │  cluster pickup_zone_id, payment_type)     │
+        │  BigQuery · nyc_taxi_raw                   │
+        │  trips_clean  (partition entière year_month│
+        │                cluster zone, paiement)     │
         └────────────────────┬───────────────────────┘
-                             │  dbt build
+                             │  dbt build   (tables, pas de DML)
                              ▼
         ┌────────────────────────────────────────────┐
-        │  BigQuery  ·  dataset analytics            │
+        │  BigQuery · nyc_taxi_analytics             │
         │  staging : stg_trips, stg_zones            │
-        │  marts   : fct_trips (incrémental, merge)  │
-        │            dim_zone, dim_date              │
+        │  marts   : fct_trips, dim_zone, dim_date   │
         │            agg_daily_zone, agg_hourly_…    │
         └────────────────────┬───────────────────────┘
                              ▼
                   Looker Studio / SQL ad hoc
 
-Orchestration : Airflow (DAG mensuel)   ·   CI : ruff + pytest + dbt parse
+Orchestration : Airflow (DAG mensuel)  ·  CI : ruff + pytest + dbt parse
 ```
 
 ### Modèle en étoile
@@ -62,11 +65,35 @@ Orchestration : Airflow (DAG mensuel)   ·   CI : ruff + pytest + dbt parse
 
 ---
 
+## Contraintes du sandbox et choix de design
+
+Le premier design (partition par date, `DELETE` puis `APPEND`, modèle dbt incrémental en
+`merge`) **échouait silencieusement** : le chargement se terminait sans erreur, mais la table
+contenait **0 ligne**. Un script de validation ([`scripts/poc_sandbox.py`](scripts/poc_sandbox.py))
+a isolé les causes :
+
+| Contrainte du sandbox | Effet sur le design initial | Réponse |
+|---|---|---|
+| Partitions temporelles expirées après 60 jours | Données 2024 partitionnées par `pickup_date` supprimées dès le chargement | **Partitionnement par entier** sur `year_month` (202401…), non soumis à l'expiration |
+| Pas de DML (`DELETE`, `MERGE`) | Purge du mois et `merge` dbt impossibles | Chargement en **`WRITE_TRUNCATE` sur la partition** (`trips_clean$202401`) ; dbt en **`table`** (`CREATE OR REPLACE`, qui est du DDL) |
+| Tables expirées après 60 jours | L'entrepôt disparaît périodiquement | Pipeline **reconstructible en une commande** : `make rebuild` |
+| Pas de Cloud Storage | Pas de data lake GCS | Parquet local chargé directement ; GCS documenté comme évolution |
+
+Garde-fou ajouté : après chaque chargement, `load_bq.py` compare le nombre de lignes produites
+par Spark, chargées, et présentes en base. Le moindre écart fait échouer la tâche, de sorte
+que l'échec silencieux initial ne peut plus se reproduire.
+
+**Idempotence** : recharger un mois remplace exactement sa partition (vérifié : rejouer
+janvier ne crée aucun doublon, corriger janvier ne touche pas février). Côté dbt, reconstruire
+une table depuis la source est idempotent par construction.
+
+---
+
 ## Prérequis
 
 - Python 3.11
-- **Java 17** (requis par PySpark) — vérifier avec `java -version`
-- Un projet Google Cloud avec le **sandbox BigQuery** activé (sans carte bancaire)
+- **Java 17** (requis par PySpark) : `java -version`
+- Un projet Google Cloud avec le **sandbox BigQuery** (sans carte bancaire)
 - `gcloud` CLI pour l'authentification locale
 
 ---
@@ -76,31 +103,31 @@ Orchestration : Airflow (DAG mensuel)   ·   CI : ruff + pytest + dbt parse
 ```bash
 git clone <votre-repo> && cd nyc-taxi-pipeline
 make setup && source .venv/bin/activate
-cp .env.example .env    # renseigner GCP_PROJECT_ID
+cp .env.example .env              # renseigner GCP_PROJECT_ID
 set -a && source .env && set +a
 
 gcloud auth application-default login
+gcloud auth application-default set-quota-project $GCP_PROJECT_ID
+
+make poc                          # vérifie que le projet GCP accepte ce design
 ```
 
 ---
 
-## Exécution manuelle, étape par étape
+## Exécution
 
 ```bash
-# 1. Télécharger un mois de données + le référentiel des zones
-make download YEAR=2024 MONTH=1
-
-# 2. Nettoyer et enrichir avec Spark (écrit data/clean/, partitionné)
+# Un mois, étape par étape
+make download  YEAR=2024 MONTH=1
 make transform YEAR=2024 MONTH=1
-
-# 3. Charger dans BigQuery (rejouable sans doublon)
-make load YEAR=2024 MONTH=1
-
-# 4. Construire les modèles dbt + lancer tous les tests
+make load      YEAR=2024 MONTH=1   # rejouable sans doublon
 make dbt-build
 
-# Ou tout d'un coup
+# Un mois de bout en bout
 make pipeline YEAR=2024 MONTH=1
+
+# Reconstruire tout l'entrepôt (après expiration des 60 jours, ou from scratch)
+make rebuild YEAR=2024 MONTHS="1 2 3"
 ```
 
 Pendant le développement, limiter la volumétrie :
@@ -124,40 +151,30 @@ Le DAG `nyc_taxi_pipeline` s'exécute le 5 de chaque mois et traite le mois M-2
 resolve_period → download → spark_transform → load_bigquery → dbt_build
 ```
 
-Backfill sur une période passée :
-
-```bash
-docker compose exec airflow airflow dags backfill \
-    -s 2024-03-01 -e 2024-06-01 nyc_taxi_pipeline
-```
-
 ---
 
 ## Qualité des données
 
-Deux niveaux de contrôle :
-
 **1. En amont, dans Spark** (`src/config.py` → `QualityRules`) : les lignes invalides sont
-écartées, et un rapport JSON est écrit dans `data/clean/_quality/` avec le nombre de lignes
-entrantes, sortantes et le taux de rejet. Un taux supérieur à 25 % déclenche un avertissement.
+écartées et un rapport JSON est écrit dans `data/clean/_quality/`. Un taux de rejet supérieur
+à 25 % déclenche un avertissement.
 
-Règles appliquées : durée entre 1 et 360 minutes, distance entre 0,1 et 200 miles,
-montant total entre 0 et 5 000 $, 1 à 8 passagers, date dans le mois traité, zones non nulles.
+Règles : durée entre 1 et 360 minutes, distance entre 0,1 et 200 miles, montant total entre
+0,01 et 5 000 $, 1 à 8 passagers, date dans le mois traité, zones non nulles.
 
-**2. En aval, dans dbt** : environ 20 tests (`not_null`, `unique`, `relationships`,
-`accepted_values`, `accepted_range`, unicité de combinaisons) plus deux tests singuliers
-métier (pas de revenu négatif, pourboire inférieur au total).
+**2. Au chargement** : le nombre de lignes en base doit égaler la sortie Spark.
 
-```bash
-cd dbt && dbt test --profiles-dir .
-```
+**3. En aval, dans dbt** : tests `not_null`, `unique`, `relationships`, `accepted_values`,
+`accepted_range`, unicité de combinaisons, plus deux tests métier (pas de revenu négatif,
+pourboire inférieur au total). L'unicité de `trip_key` est en *warning* : la source TLC
+contient des doublons exacts, qu'on signale sans bloquer le pipeline.
 
 ---
 
-## Tests unitaires
+## Tests
 
 ```bash
-make test     # pytest : job Spark sur micro-datasets + module de téléchargement
+make test     # pytest : job Spark sur micro-datasets, téléchargement, helpers de chargement
 make lint     # ruff
 ```
 
@@ -166,34 +183,31 @@ make lint     # ruff
 ## Choix techniques
 
 **Pourquoi Spark et pas Pandas ?** Un mois tient en mémoire, mais pas plusieurs années.
-Le job est écrit pour passer à l'échelle sans réécriture : les mêmes transformations
-tournent en local ou sur un cluster.
+Les mêmes transformations tournent en local ou sur un cluster, sans réécriture.
 
 **Pourquoi un schéma en étoile ?** Les requêtes analytiques filtrent par date et par zone.
-Séparer faits et dimensions évite de dupliquer les libellés de zone sur des millions de
-lignes et rend les jointures BI naturelles.
+Séparer faits et dimensions évite de dupliquer les libellés sur des millions de lignes.
 
-**Pourquoi partitionner par `pickup_date` et clusteriser ?** Dans BigQuery, la facturation
-dépend des octets lus. Partitionner par date réduit fortement le volume scanné sur les
-requêtes filtrées par période, et le clustering accélère les filtres par zone et mode de paiement.
+**Pourquoi partitionner par `year_month` et clusteriser ?** BigQuery facture les octets lus.
+Le partitionnement mensuel limite le scan aux mois filtrés ; le clustering accélère les
+filtres par zone et mode de paiement. Le choix d'une partition *entière* plutôt que
+temporelle est imposé par le sandbox (voir plus haut).
 
-**Pourquoi un modèle incrémental avec `merge` ?** Le rechargement d'un mois ne doit pas créer
-de doublons. La clé de substitution `trip_key` assure l'idempotence de bout en bout,
-en complément du `DELETE` par mois côté chargement.
+**Pourquoi des tables dbt plutôt qu'un modèle incrémental ?** Le sandbox interdit `MERGE`.
+Sur 3 à 6 mois, reconstruire `fct_trips` reste très en dessous du quota gratuit
+(1 To de requêtes par mois), et c'est idempotent par construction.
 
-**Pourquoi Airflow en dernier dans la conception ?** Chaque étape est un module Python
-testable et exécutable seul. Le DAG ne fait qu'enchaîner ces modules, ce qui simplifie
-le débogage et rend le pipeline rejouable à la main.
+**Pourquoi Airflow en dernier ?** Chaque étape est un module Python testable et exécutable
+seul. Le DAG ne fait qu'enchaîner ces modules.
 
 ---
 
 ## Limites connues et pistes d'amélioration
 
-- Le chargement passe par des fichiers locaux. En production, on écrirait dans Cloud Storage
-  et on chargerait depuis un external stage.
-- Le sandbox BigQuery impose des quotas ; se limiter à 3 à 6 mois de données.
-- Pistes : exposition d'un dashboard Looker Studio, alerting sur le taux de rejet,
-  déploiement de Spark sur Dataproc Serverless.
+- **Sandbox** : 10 Go de stockage, tables expirées à 60 jours. Se limiter à 3 à 6 mois.
+- **Avec un compte de facturation** : Cloud Storage comme data lake, modèle dbt incrémental
+  (`insert_overwrite` par partition), Spark sur Dataproc Serverless.
+- Dashboard Looker Studio, alerting sur le taux de rejet.
 
 ---
 
@@ -205,14 +219,15 @@ nyc-taxi-pipeline/
 │   ├── config.py          # configuration centralisée, règles qualité
 │   ├── download.py        # téléchargement atomique des sources
 │   ├── transform.py       # job PySpark (nettoyage, enrichissement)
-│   └── load_bq.py         # chargement idempotent dans BigQuery
+│   └── load_bq.py         # chargement idempotent + vérification
 ├── dbt/
 │   ├── models/staging/    # stg_trips, stg_zones (+ sources, tests)
 │   ├── models/marts/      # fct_trips, dim_zone, dim_date, agrégats
 │   └── tests/             # tests singuliers métier
-├── dags/
-│   └── nyc_taxi_pipeline.py
-├── tests/                 # pytest (Spark local + mocks HTTP)
+├── dags/nyc_taxi_pipeline.py
+├── scripts/poc_sandbox.py # validation des contraintes du sandbox
+├── tests/                 # pytest
+├── docs/                  # architecture, runbook, requêtes d'analyse
 ├── .github/workflows/ci.yml
 ├── docker-compose.yml     # Airflow 2.9 + Postgres
 └── Makefile

@@ -1,25 +1,23 @@
 {{ config(
-    materialized='incremental',
-    unique_key='trip_key',
-    partition_by={'field': 'pickup_date', 'data_type': 'date'},
-    cluster_by=['pickup_zone_id', 'payment_type'],
-    incremental_strategy='merge'
+    materialized='table',
+    partition_by={
+        'field': 'year_month',
+        'data_type': 'int64',
+        'range': {'start': 200901, 'end': 203001, 'interval': 1}
+    },
+    cluster_by=['pickup_zone_id', 'payment_type']
 ) }}
 
 -- Table de faits : grain = un trajet. Cles vers dim_zone et dim_date.
-
-with trips as (
-
-    select * from {{ ref('stg_trips') }}
-
-    {% if is_incremental() %}
-      where pickup_date > (select coalesce(max(pickup_date), '1900-01-01') from {{ this }})
-    {% endif %}
-
-)
+--
+-- Materialisation `table` (CREATE OR REPLACE TABLE ... AS SELECT) et non `incremental` :
+-- le sandbox BigQuery interdit le DML, donc MERGE / INSERT sont impossibles.
+-- Reconstruire la table est idempotent par construction ; sur 3 a 6 mois, le cout
+-- reste tres en dessous du quota gratuit.
 
 select
     trip_key,
+    year_month,
     pickup_date,
     pickup_at,
     dropoff_at,
@@ -46,4 +44,4 @@ select
         else 'long'
     end as trip_length_bucket
 
-from trips
+from {{ ref('stg_trips') }}

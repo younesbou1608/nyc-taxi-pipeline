@@ -8,8 +8,8 @@ Tests :
   4. CREATE OR REPLACE TABLE ... PARTITION BY RANGE_BUCKET (= dbt `table`)       [DECISIF]
 
 Usage (depuis la racine du repo, venv active) :
-    python poc_sandbox.py --project nyc-taxi-pipeline-509022
-    python poc_sandbox.py --project nyc-taxi-pipeline-509022 --keep   # garde le dataset de test
+    python scripts/poc_sandbox.py --project <ID>
+    python scripts/poc_sandbox.py --project <ID> --keep   # garde le dataset de test
 """
 from __future__ import annotations
 
@@ -167,7 +167,9 @@ class Poc:
         self.q(
             f"""
             CREATE OR REPLACE TABLE `{dst}`
-            PARTITION BY RANGE_BUCKET(year_month, GENERATE_ARRAY({RANGE[0]}, {RANGE[1]}, {RANGE[2]}))
+            PARTITION BY RANGE_BUCKET(
+                year_month, GENERATE_ARRAY({RANGE[0]}, {RANGE[1]}, {RANGE[2]})
+            )
             AS SELECT year_month, COUNT(*) AS n FROM `{src}` GROUP BY 1
             """
         )
@@ -198,9 +200,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         poc.run("t0", "0. Table trips_clean existante", poc.t0_existing)
         poc.run("t1", "1. DML (DELETE)", poc.t1_dml)
-        poc.run("t2", "2. WRITE_TRUNCATE par partition year_month  [DECISIF]", poc.t2_range_truncate)
+        poc.run("t2", "2. WRITE_TRUNCATE par partition  [DECISIF]", poc.t2_range_truncate)
         poc.run("t3", "3. Partition DATE avec dates 2024", poc.t3_date_partition)
-        poc.run("t4", "4. CTAS partitionne RANGE_BUCKET (dbt table)  [DECISIF]", poc.t4_ctas_partitioned)
+        poc.run("t4", "4. CTAS partitionne (dbt table)  [DECISIF]", poc.t4_ctas_partitioned)
     finally:
         if not args.keep:
             client.delete_dataset(ds, delete_contents=True, not_found_ok=True)

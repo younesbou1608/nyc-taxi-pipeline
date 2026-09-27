@@ -1,14 +1,15 @@
 # Schéma d'architecture (Mermaid)
 
-Coller ce bloc dans le README GitHub : il est rendu automatiquement.
+Rendu automatiquement par GitHub.
 
 ```mermaid
 flowchart TD
     A[NYC TLC CDN<br/>Parquet mensuels] -->|src/download.py| B[data/raw]
     Z[taxi_zone_lookup.csv] --> B
     B -->|src/transform.py<br/>PySpark| C[data/clean/trips<br/>partitionné year/month]
-    B --> Q[data/clean/_quality<br/>métriques de rejet]
-    C -->|src/load_bq.py<br/>DELETE mois + APPEND| D[(BigQuery raw<br/>trips_clean)]
+    B --> Q[data/clean/_quality<br/>rapport de rejet]
+    C -->|src/load_bq.py<br/>WRITE_TRUNCATE trips_clean$YYYYMM| D[(BigQuery raw<br/>trips_clean<br/>partition year_month)]
+    Q -.->|vérification du nombre de lignes| D
     D -->|dbt| E[staging<br/>stg_trips / stg_zones]
     E --> F[marts<br/>fct_trips · dim_zone · dim_date]
     F --> G[agrégats<br/>agg_daily_zone · agg_hourly_demand]

@@ -2,10 +2,16 @@ version: 2
 
 models:
   - name: fct_trips
-    description: Table de faits des trajets (grain = un trajet), partitionnee par pickup_date.
+    description: Table de faits des trajets (grain = un trajet), partitionnee par year_month.
     columns:
       - name: trip_key
-        tests: [not_null, unique]
+        tests:
+          - not_null
+          - unique:
+              config:
+                severity: warn   # doublons exacts presents dans la source TLC
+      - name: year_month
+        tests: [not_null]
       - name: pickup_date
         tests: [not_null]
       - name: pickup_zone_id

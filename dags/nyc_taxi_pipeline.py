@@ -33,9 +33,14 @@ DEFAULT_ARGS = {
 )
 def nyc_taxi_pipeline():
     @task
-    def resolve_period(data_interval_start=None) -> dict[str, int]:
-        """Le run du mois M traite les donnees du mois M-2 (delai de publication TLC)."""
-        target = data_interval_start.subtract(months=2)
+    def resolve_period(data_interval_end=None) -> dict[str, int]:
+        """Le run du mois M traite les donnees du mois M-2 (delai de publication TLC).
+
+        Pour un planning cron, le run declenche le 5 du mois M a
+        data_interval_start = 5 du mois M-1 et data_interval_end = 5 du mois M.
+        On part donc de data_interval_end (partir de start donnerait M-3).
+        """
+        target = data_interval_end.subtract(months=2)
         return {"year": target.year, "month": target.month}
 
     @task
@@ -62,6 +67,7 @@ def nyc_taxi_pipeline():
 
     @task
     def load_bigquery(report: dict) -> int:
+        """Chargement idempotent (WRITE_TRUNCATE sur la partition) + verification du compte."""
         from src.load_bq import ensure_datasets, get_client, load_trips, load_zones
 
         client = get_client()
@@ -74,7 +80,7 @@ def nyc_taxi_pipeline():
         bash_command=(
             f"cd {DBT_DIR} && "
             "dbt deps --quiet && "
-            f"dbt build --profiles-dir {DBT_DIR} --target prod"
+            f"dbt build --profiles-dir {DBT_DIR}"
         ),
     )
 

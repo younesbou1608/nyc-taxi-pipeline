@@ -6,9 +6,8 @@ sources:
     schema: "{{ env_var('BQ_RAW_DATASET', 'nyc_taxi_raw') }}"
     tables:
       - name: trips_clean
-        description: Trajets nettoyes et enrichis par le job Spark.
-        loaded_at_field: pickup_at
-        freshness:
-          warn_after: {count: 45, period: day}
+        description: >
+          Trajets nettoyes et enrichis par le job Spark. Partitionnee par entier sur
+          year_month (le sandbox expire les partitions temporelles > 60 jours).
       - name: taxi_zones
         description: Referentiel des 265 zones TLC.

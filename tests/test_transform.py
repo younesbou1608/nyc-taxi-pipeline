@@ -52,7 +52,8 @@ def test_derived_columns(spark):
     assert row.trip_duration_min == pytest.approx(20.0)
     assert row.avg_speed_mph == pytest.approx(15.0)
     assert row.tip_rate == pytest.approx(0.2)
-    assert (row.year, row.month, row.pickup_hour) == (2024, 1, 7)
+    assert (row.year, row.month, row.pickup_hour) == (2024, 1, 8)
+    assert row.year_month == 202401
 
 
 @pytest.mark.parametrize(

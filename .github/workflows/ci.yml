@@ -25,17 +25,19 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: Lint
-        run: ruff check src tests dags
+        run: ruff check src tests dags scripts
 
       - name: Unit tests (PySpark)
         run: pytest -q
 
-      - name: dbt parse (validation SQL & references)
+      # dbt parse compile le projet (Jinja, ref(), sources, YAML) sans se connecter a BigQuery.
+      # Il echoue vraiment en cas d'erreur : plus de `|| echo` qui masquait les echecs.
+      - name: dbt parse
         env:
-          GCP_PROJECT_ID: dummy-project
+          GCP_PROJECT_ID: ci-dummy-project
           BQ_RAW_DATASET: nyc_taxi_raw
           BQ_ANALYTICS_DATASET: nyc_taxi_analytics
         run: |
           cd dbt
           dbt deps
-          dbt parse --profiles-dir . --target dev || echo "dbt parse requiert des credentials BigQuery - ignore en CI"
+          dbt parse --profiles-dir .

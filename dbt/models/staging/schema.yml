@@ -5,7 +5,13 @@ models:
     description: Trajets normalises, un enregistrement par course.
     columns:
       - name: trip_key
-        description: Cle de substitution du trajet.
+        description: Cle de substitution du trajet (hash).
+        tests:
+          - not_null
+          - unique:
+              config:
+                severity: warn   # doublons exacts presents dans la source TLC
+      - name: year_month
         tests: [not_null]
       - name: pickup_at
         tests: [not_null]

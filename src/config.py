@@ -52,6 +52,17 @@ class BigQueryConfig:
         return f"{self.project}.{self.raw_dataset}.{self.zones_table}"
 
 
+# Partitionnement BigQuery par entier sur year_month (ex. 202401).
+# Le sandbox expire les partitions *temporelles* de plus de 60 jours : des donnees 2024
+# partitionnees par date seraient supprimees des le chargement (verifie par
+# scripts/poc_sandbox.py). Le partitionnement par entier n'est pas concerne.
+YEAR_MONTH_RANGE = (200901, 203001, 1)  # start, end (exclu), interval -> 2100 partitions
+
+
+def year_month(year: int, month: int) -> int:
+    return year * 100 + month
+
+
 PATHS = Paths()
 RULES = QualityRules()
 BQ = BigQueryConfig()
@@ -61,4 +72,6 @@ SPARK_CONF: dict[str, str] = {
     "spark.sql.shuffle.partitions": os.getenv("SPARK_SHUFFLE_PARTITIONS", "8"),
     "spark.driver.memory": os.getenv("SPARK_DRIVER_MEMORY", "4g"),
     "spark.sql.parquet.compression.codec": "snappy",
+    # INT96 (defaut Spark) est un format legacy : on ecrit des timestamps standard.
+    "spark.sql.parquet.outputTimestampType": "TIMESTAMP_MICROS",
 }

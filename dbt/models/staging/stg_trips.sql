@@ -12,9 +12,13 @@ with source as (
 renamed as (
 
     select
+        -- Pas de cle naturelle dans les donnees TLC : hash des attributs du trajet.
+        -- Des doublons exacts existent dans la source -> test unique en warn, pas en error.
         {{ dbt_utils.generate_surrogate_key([
-            'pickup_at', 'dropoff_at', 'pickup_zone_id', 'dropoff_zone_id', 'total_amount'
+            'vendor_id', 'pickup_at', 'dropoff_at', 'pickup_zone_id', 'dropoff_zone_id',
+            'passenger_count', 'trip_distance_miles', 'total_amount'
         ]) }}                                   as trip_key,
+        year_month,
         vendor_id,
         pickup_at,
         dropoff_at,
