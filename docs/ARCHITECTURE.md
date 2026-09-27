@@ -13,7 +13,7 @@ flowchart TD
     D -->|dbt| E[staging<br/>stg_trips / stg_zones]
     E --> F[marts<br/>fct_trips · dim_zone · dim_date]
     F --> G[agrégats<br/>agg_daily_zone · agg_hourly_demand]
-    G --> H[Looker Studio]
+    G --> H[Data Studio]
 
     subgraph Orchestration
       I[Airflow DAG mensuel]

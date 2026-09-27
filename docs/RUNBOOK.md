@@ -1,6 +1,6 @@
 # Runbook
 
-## Les tables ont disparu / Looker Studio est vide
+## Les tables ont disparu / le dashboard est vide
 
 Normal dans le sandbox : les tables expirent 60 jours après leur création.
 ```bash

@@ -1,10 +1,16 @@
 # NYC Taxi Analytics — Pipeline Big Data vers BigQuery
+
 [![CI](https://github.com/younesbou1608/nyc-taxi-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/younesbou1608/nyc-taxi-pipeline/actions/workflows/ci.yml)
 
 Pipeline de données de bout en bout sur les trajets de taxis jaunes de New York
 (NYC TLC, ~3 M de lignes par mois) : ingestion, nettoyage distribué avec **PySpark**,
 chargement dans **BigQuery**, modélisation dimensionnelle et tests de qualité avec **dbt**,
 orchestration **Airflow** et CI **GitHub Actions**.
+
+**📊 [Voir le dashboard en ligne](https://datastudio.google.com/reporting/ea417265-5ab1-41f5-a8e6-ff03cd52ff0c)**
+(Data Studio, T1 2024, 9 070 727 trajets)
+
+![Dashboard](docs/dashboard.png)
 
 **100 % gratuit** : tourne sur le [sandbox BigQuery](https://cloud.google.com/bigquery/docs/sandbox),
 sans carte bancaire. Ce choix impose des contraintes fortes, qui ont façonné l'architecture
@@ -49,7 +55,7 @@ sans carte bancaire. Ce choix impose des contraintes fortes, qui ont façonné l
         │            agg_daily_zone, agg_hourly_…    │
         └────────────────────┬───────────────────────┘
                              ▼
-                  Looker Studio / SQL ad hoc
+                  Data Studio (dashboard) / SQL ad hoc
 
 Orchestration : Airflow (DAG mensuel)  ·  CI : ruff + pytest + dbt parse
 ```
@@ -83,6 +89,10 @@ a isolé les causes :
 Garde-fou ajouté : après chaque chargement, `load_bq.py` compare le nombre de lignes produites
 par Spark, chargées, et présentes en base. Le moindre écart fait échouer la tâche, de sorte
 que l'échec silencieux initial ne peut plus se reproduire.
+
+**Réconciliation de bout en bout** sur T1 2024 : 9 070 727 lignes en sortie de Spark,
+9 070 727 chargées dans BigQuery, 9 070 727 dans `fct_trips`, 9 070 727 affichées par le
+dashboard. Aucune ligne perdue ni dupliquée entre la source et la visualisation.
 
 **Idempotence** : recharger un mois remplace exactement sa partition (vérifié : rejouer
 janvier ne crée aucun doublon, corriger janvier ne touche pas février). Côté dbt, reconstruire
@@ -167,9 +177,34 @@ Règles : durée entre 1 et 360 minutes, distance entre 0,1 et 200 miles, montan
 
 **3. En aval, dans dbt** : tests `not_null`, `unique`, `relationships`, `accepted_values`,
 `accepted_range`, unicité de combinaisons, plus deux tests métier (pas de revenu négatif,
-pourboire inférieur au total). L'unicité de `trip_key` est en *warning* et non en erreur : la source TLC n'a pas de
-clé naturelle et peut contenir des doublons. Mesuré sur janvier à mars 2024 :
-**1 clé en double sur 9 070 727 trajets**, signalée sans bloquer le pipeline.
+pourboire inférieur au total). L'unicité de `trip_key` est en *warning* et non en erreur : la
+source TLC n'a pas de clé naturelle et peut contenir des doublons. Mesuré sur janvier à mars
+2024 : **1 clé en double sur 9 070 727 trajets**, signalée sans bloquer le pipeline.
+
+---
+
+## Dashboard
+
+Construit dans Data Studio (ex-Looker Studio), branché **uniquement sur les tables agrégées**
+(`agg_daily_zone`, `agg_hourly_demand`). Chaque interaction relance une requête BigQuery :
+interroger `fct_trips` (1,3 Gio par scan) épuiserait vite le quota gratuit, alors que les
+agrégats ne pèsent que quelques Mo.
+
+Choix de calcul :
+- **Ticket moyen** = `SUM(revenue) / SUM(trips)`, une moyenne pondérée. Faire la moyenne des
+  moyennes journalières donnerait autant de poids à une zone de 3 trajets qu'à une zone de 50 000.
+- **Demande horaire** normalisée en *trajets moyens par jour* : le trimestre compte 65 jours de
+  semaine et 26 de week-end, et comparer des totaux bruts serait trompeur.
+
+Enseignements sur T1 2024 :
+- Ticket moyen de **27,51 $**, taux de pourboire moyen de **20,2 %** (rapporté au tarif hors surcharges).
+- **JFK** (≈ 33 M$) et **LaGuardia** (≈ 18 M$) dominent le revenu : les courses aéroport sont
+  longues et chères.
+- En semaine, le pic de demande est vers **18 h** ; le week-end, l'activité entre **minuit et
+  4 h** est nettement plus forte.
+- Environ **100 000 trajets par jour**, avec un cycle hebdomadaire marqué et une hausse de
+  janvier à mars.
+
 ---
 
 ## Tests
@@ -208,7 +243,10 @@ seul. Le DAG ne fait qu'enchaîner ces modules.
 - **Sandbox** : 10 Go de stockage, tables expirées à 60 jours. Se limiter à 3 à 6 mois.
 - **Avec un compte de facturation** : Cloud Storage comme data lake, modèle dbt incrémental
   (`insert_overwrite` par partition), Spark sur Dataproc Serverless.
-- Dashboard Looker Studio, alerting sur le taux de rejet.
+- Taux de pourboire exact : ajouter `sum_tip` et `sum_fare` aux agrégats dbt (le dashboard
+  utilise aujourd'hui une moyenne pondérée approchée), et calculer le nombre de jours dans dbt
+  plutôt que dans le dashboard.
+- Alerting sur le taux de rejet.
 
 ---
 
